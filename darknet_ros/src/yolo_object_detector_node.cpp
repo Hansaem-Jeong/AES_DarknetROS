@@ -14,6 +14,6 @@ int main(int argc, char** argv) {
   ros::NodeHandle nodeHandle("~");
   darknet_ros::YoloObjectDetector yoloObjectDetector(nodeHandle);
 
-  ros::spin();
+  //ros::spin();
   return 0;
 }

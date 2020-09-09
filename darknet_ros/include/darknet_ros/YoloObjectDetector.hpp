@@ -55,6 +55,7 @@ extern "C" {
 #include "parser.h"
 #include "region_layer.h"
 #include "utils.h"
+#include "imread.h"
 }
 
 extern "C" void ipl_into_image(IplImage* src, image im);
