@@ -91,6 +91,7 @@ include_directories(
 
 set(PROJECT_LIB_FILES
     src/YoloObjectDetector.cpp                    src/image_interface.c
+	src/image_read.c
 )
 
 set(DARKNET_CORE_FILES
@@ -116,7 +117,6 @@ set(DARKNET_CORE_FILES
     ${DARKNET_PATH}/src/gru_layer.c               ${DARKNET_PATH}/src/utils.c
     ${DARKNET_PATH}/src/upsample_layer.c          ${DARKNET_PATH}/src/logistic_layer.c
     ${DARKNET_PATH}/src/l2norm_layer.c            ${DARKNET_PATH}/src/yolo_layer.c
-	${DARKNET_PATH}/src/imread.c
 
     ${DARKNET_PATH}/examples/art.c                ${DARKNET_PATH}/examples/lsd.c
     ${DARKNET_PATH}/examples/attention.c          ${DARKNET_PATH}/examples/nightmare.c
