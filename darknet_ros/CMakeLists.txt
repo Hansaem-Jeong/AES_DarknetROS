@@ -225,6 +225,7 @@ endif()
 #############
 
 if(CATKIN_ENABLE_TESTING)
+
   find_package(rostest REQUIRED)
 
   # Object detection in images.
