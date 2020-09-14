@@ -1,6 +1,8 @@
 #include "darknet_ros/image_read.h"
 
-#define DIRNAME "/home/avees/Downloads/KODAS/"
+//#define DIRNAME "/home/avees/Downloads/KODAS/"
+#define DIRNAME "/home/avees/Downloads/FrontLeft/"
+
 //#define DEBUG
 
 /* get timestamp in ms */
@@ -8,6 +10,7 @@ double get_time_in_ms(){
 	struct timespec time_after_boot;
 	clock_gettime(CLOCK_MONOTONIC,&time_after_boot);
 
+	/* return ms */
 	return (time_after_boot.tv_sec * 1000 + time_after_boot.tv_nsec * 0.000001);
 }
 
@@ -29,31 +32,28 @@ int file_filter(const struct dirent *info){
 }
 
 /* Read image from disk , -1: Error, 0: Finish reading image, 1: Success */
-int read_image_from_disk(image *img, int buff_index){
+int read_image_from_disk(image *img, int buff_index, char *path){
 	char buff[256];
+	char temp[256];
 	char *input = buff;
-	//char filename[256] = "/home/avees/Downloads/KODAS/000000.jpg";
-	//char dirname[256] = "/home/avees/Downloads/KODAS/";
-	image temp_img;
-	image resized_img;
 	static struct dirent **namelist;
 	static int img_count;
 	static int idx = 0;
 
 	/* init */
 	if(idx == 0){
-		if(opendir(DIRNAME) == NULL){
-			fprintf(stderr, "OPEN ERROR %s\n", DIRNAME);
+		if(opendir(path) == NULL){
+			fprintf(stderr, "OPEN ERROR %s\n", path);
 			return -1;
 		}
-		img_count = scandir(DIRNAME, &namelist, file_filter, alphasort);
+		img_count = scandir(path, &namelist, file_filter, alphasort);
 		if(img_count == -1){
-			fprintf(stderr, "SCAN ERROR %s\n", DIRNAME);
+			fprintf(stderr, "SCAN ERROR %s\n", path);
 			return -1;
 		}
 		//printf("Number of image: %d\n", img_count);
 	}
-	strncpy(input, DIRNAME, 256);
+	strncpy(input, path, 256);
 	strcat(input, namelist[idx]->d_name);
 
 #ifdef DEBUG

@@ -27,6 +27,8 @@ char* weights;
 char* data;
 char** detectionNames;
 
+char* image_path;
+
 int doneIndex = -1;
 int fetchDone = -1;
 int detectDone = -1;
@@ -91,6 +93,7 @@ void YoloObjectDetector::init() {
   std::string dataPath;
   std::string configModel;
   std::string weightsModel;
+  std::string imagePath;
 
   // Threshold of object detection.
   float thresh;
@@ -102,6 +105,11 @@ void YoloObjectDetector::init() {
   weightsPath += "/" + weightsModel;
   weights = new char[weightsPath.length() + 1];
   strcpy(weights, weightsPath.c_str());
+
+  // Path to image file.
+  nodeHandle_.param("image_path", imagePath, std::string("/home/avees/AES/FrontLeft"));
+  image_path = new char[imagePath.length() + 1];
+  strcpy(image_path, imagePath.c_str());
 
   // Path to config file.
   nodeHandle_.param("yolo_model/config_file/name", configModel, std::string("yolov2-tiny.cfg"));
@@ -402,7 +410,7 @@ void* YoloObjectDetector::fetchInThread(){
   double fetchStart, fetchTime;
 
   fetchStart = get_time_in_ms();
-  check_status = read_image_from_disk(buff_, buffIndex_);
+  check_status = read_image_from_disk(buff_, buffIndex_, image_path);
   fetchTime = get_time_in_ms() - fetchStart;
   //printf("fetch: %f\n", fetchTime);
 
@@ -412,11 +420,12 @@ void* YoloObjectDetector::fetchInThread(){
 		ros::shutdown();
 		break;
 	case 0:
-		//printf("Fetch thread finish\n");
+		// Finish 
 		fetchDone = 1;
 		doneIndex = buffIndex_;
 		break;
-	case 1:
+	case 1:            
+		// Success
 		break;
 	default:
 		fprintf(stderr, "FETCH ERROR\n");
@@ -522,7 +531,7 @@ void YoloObjectDetector::yolo() {
   layer l = net_->layers[net_->n - 1];
   roiBoxes_ = (darknet_ros::RosBox_*)calloc(l.w * l.h * l.n, sizeof(darknet_ros::RosBox_));
 
-  if(read_image_from_disk(buff_, buffIndex_) == -1){
+  if(read_image_from_disk(buff_, buffIndex_, image_path) == -1){
 	  fprintf(stderr, "FETCH ERROR\n");
 	  ros::shutdown();
   }
