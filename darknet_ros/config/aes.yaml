@@ -1,0 +1,21 @@
+yolo_model:
+
+  config_file:
+    name: san10.cfg
+  weight_file:
+    name: san10_52000.weights
+  threshold:
+    value: 0.3
+  detection_classes:
+    names:
+      - person
+      - bike
+      - motor
+      - bus
+      - truck
+      - traffic_light
+      - traffic_sign
+      - FVI
+      - FVL
+      - FVR
+
