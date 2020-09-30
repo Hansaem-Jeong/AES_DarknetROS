@@ -9,6 +9,6 @@
 
 double get_time_in_ms();
 int file_filter(const struct dirent *info);
-int read_image_from_disk(image *img, int buff_index, char *path);
+int read_image_from_disk(image *img, int buff_index, char *path, int *frame_count);
 
 #endif

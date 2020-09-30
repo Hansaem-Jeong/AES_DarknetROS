@@ -31,6 +31,7 @@ if (CUDA_FOUND)
     -gencode arch=compute_62,code=sm_62
   )
   add_definitions(-DGPU)
+  add_definitions(-DCUDNN)
 else()
   list(APPEND LIBRARIES "m")
 endif()
@@ -117,16 +118,19 @@ set(DARKNET_CORE_FILES
     ${DARKNET_PATH}/src/gru_layer.c               ${DARKNET_PATH}/src/utils.c
     ${DARKNET_PATH}/src/upsample_layer.c          ${DARKNET_PATH}/src/logistic_layer.c
     ${DARKNET_PATH}/src/l2norm_layer.c            ${DARKNET_PATH}/src/yolo_layer.c
+	${DARKNET_PATH}/src/image_opencv.cpp          ${DARKNET_PATH}/src/can.c
+    ${DARKNET_PATH}/src/iseg_layer.c
 
-    ${DARKNET_PATH}/examples/art.c                ${DARKNET_PATH}/examples/lsd.c
-    ${DARKNET_PATH}/examples/attention.c          ${DARKNET_PATH}/examples/nightmare.c
-    ${DARKNET_PATH}/examples/captcha.c            ${DARKNET_PATH}/examples/regressor.c
-    ${DARKNET_PATH}/examples/cifar.c              ${DARKNET_PATH}/examples/rnn.c
-    ${DARKNET_PATH}/examples/classifier.c         ${DARKNET_PATH}/examples/segmenter.c
-    ${DARKNET_PATH}/examples/coco.c               ${DARKNET_PATH}/examples/super.c
-    ${DARKNET_PATH}/examples/darknet.c            ${DARKNET_PATH}/examples/tag.c
-    ${DARKNET_PATH}/examples/detector.c           ${DARKNET_PATH}/examples/yolo.c
-    ${DARKNET_PATH}/examples/go.c
+
+#    ${DARKNET_PATH}/examples/art.c                ${DARKNET_PATH}/examples/lsd.c
+#    ${DARKNET_PATH}/examples/attention.c          ${DARKNET_PATH}/examples/nightmare.c
+#    ${DARKNET_PATH}/examples/captcha.c            ${DARKNET_PATH}/examples/regressor.c
+#    ${DARKNET_PATH}/examples/cifar.c              ${DARKNET_PATH}/examples/rnn.c
+#    ${DARKNET_PATH}/examples/classifier.c         ${DARKNET_PATH}/examples/segmenter.c
+#    ${DARKNET_PATH}/examples/coco.c               ${DARKNET_PATH}/examples/super.c
+#    ${DARKNET_PATH}/examples/darknet.c            ${DARKNET_PATH}/examples/tag.c
+#    ${DARKNET_PATH}/examples/detector.c           ${DARKNET_PATH}/examples/yolo.c
+#    ${DARKNET_PATH}/examples/go.c
 )
 
 set(DARKNET_CUDA_FILES
@@ -153,6 +157,7 @@ if (CUDA_FOUND)
     cudart
     cublas
     curand
+	cudnn
   )
 
   cuda_add_executable(${PROJECT_NAME}
@@ -213,12 +218,6 @@ install(DIRECTORY config launch yolo_network_config
 set(PATH "${CMAKE_CURRENT_SOURCE_DIR}/yolo_network_config/weights")
 
 # Download yolov3.weights
-set(FILE "${PATH}/yolov3.weights")
-message(STATUS "Checking and downloading yolov3.weights if needed ...")
-if (NOT EXISTS "${FILE}")
-  message(STATUS "... file does not exist. Downloading now ...")
-  execute_process(COMMAND wget -q https://github.com/leggedrobotics/darknet_ros/releases/download/1.1.4/yolov3.weights -P ${PATH})
-endif()
 
 #############
 ## Testing ##

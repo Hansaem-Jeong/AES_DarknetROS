@@ -32,7 +32,7 @@ int file_filter(const struct dirent *info){
 }
 
 /* Read image from disk , -1: Error, 0: Finish reading image, 1: Success */
-int read_image_from_disk(image *img, int buff_index, char *path){
+int read_image_from_disk(image *img, int buff_index, char *path, int *frame_count){
 	char buff[256];
 	char temp[256];
 	char *input = buff;
@@ -55,6 +55,7 @@ int read_image_from_disk(image *img, int buff_index, char *path){
 	}
 	strncpy(input, path, 256);
 	strcat(input, namelist[idx]->d_name);
+	frame_count = idx + 1;
 
 #ifdef DEBUG
 	printf("input file: %s\n", buff);

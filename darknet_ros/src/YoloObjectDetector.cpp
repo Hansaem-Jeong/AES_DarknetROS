@@ -19,6 +19,8 @@ std::string darknetFilePath_ = DARKNET_FILE_PATH;
 #endif
 
 #define MAX_ITERATION 1000
+#define CONTENTION_FREE
+//#define SEQUENTIAL
 
 namespace darknet_ros {
 
@@ -28,17 +30,20 @@ char* data;
 char** detectionNames;
 
 char* image_path;
+char* gt_path;
 
 int doneIndex = -1;
 int fetchDone = -1;
 int detectDone = -1;
 int dispDone = -1;
+int fr_cnt = 0;
 
 double fetchDelay[MAX_ITERATION];
 double detectDelay[MAX_ITERATION];
 double dispDelay[MAX_ITERATION];
 double cycleTime[MAX_ITERATION];
 double delay[MAX_ITERATION];
+double f_timestamp[3]; // frame timestamp
 
 YoloObjectDetector::YoloObjectDetector(ros::NodeHandle nh)
     : nodeHandle_(nh), imageTransport_(nodeHandle_), numClasses_(0), classLabels_(0), rosBoxes_(0), rosBoxCounter_(0) {
@@ -94,6 +99,7 @@ void YoloObjectDetector::init() {
   std::string configModel;
   std::string weightsModel;
   std::string imagePath;
+  std::string gtPath;
 
   // Threshold of object detection.
   float thresh;
@@ -107,9 +113,14 @@ void YoloObjectDetector::init() {
   strcpy(weights, weightsPath.c_str());
 
   // Path to image file.
-  nodeHandle_.param("image_path", imagePath, std::string("/home/avees/AES/FrontLeft"));
+  nodeHandle_.param("image_path", imagePath, std::string("/aveesSSD/AES/FrontLeft/"));
   image_path = new char[imagePath.length() + 1];
   strcpy(image_path, imagePath.c_str());
+
+  // Path to GT file.
+  nodeHandle_.param("gt_path", gtPath, std::string("/aveesSSD/AES/FrontLeft/"));
+  gt_path = new char[gtPath.length() + 1];
+  strcpy(gt_path, gtPath.c_str());
 
   // Path to config file.
   nodeHandle_.param("yolo_model/config_file/name", configModel, std::string("yolov2-tiny.cfg"));
@@ -316,16 +327,26 @@ detection* YoloObjectDetector::avgPredictions(network* net, int* nboxes) {
 
 void* YoloObjectDetector::detectInThread() {
   double detectStart, detectTime;
+  char gt_buff[256];
+  char *gt_input = gt_buff;
+  int checkTrackingStatus;
+  car_cnt cnts;
 
-  detectStart = get_time_in_ms();
 
   running_ = 1;
   float nms = .4;
-  int detectIndex = (buffIndex_ + 2) % 3;
+#if (defined CONTENTION_FREE || defined SEQUENTIAL)
+  int detectIndex_ = (buffIndex_) % 3;
+#else
+  int detectIndex_ = (buffIndex_ + 2) % 3;
+#endif
+  //printf("detectIndex: %d\n", detectIndex_);
 
   layer l = net_->layers[net_->n - 1];
-  float* X = buffLetter_[(buffIndex_ + 2) % 3].data;
+  float* X = buffLetter_[detectIndex_].data;
+  detectStart = get_time_in_ms();
   float* prediction = network_predict(net_, X);
+  detectTime = get_time_in_ms() - detectStart;
 
   rememberNetwork(net_);
   detection* dets = 0;
@@ -340,8 +361,14 @@ void* YoloObjectDetector::detectInThread() {
     printf("\nFPS:%.1f\n", fps_);
     printf("Objects:\n\n");
   }
-  image display = buff_[(buffIndex_ + 2) % 3];
-  draw_detections(display, dets, nboxes, demoThresh_, demoNames_, demoAlphabet_, demoClasses_);
+  image display = buff_[detectIndex_];
+  //draw_detections(display, dets, nboxes, demoThresh_, demoNames_, demoAlphabet_, demoClasses_);
+  checkTrackingStatus = draw_tracking_detections(buff_[detectIndex_], gt_path, dets, nboxes, demoThresh_, demoNames_, demoAlphabet_, demoClasses_, &cnts, "a", fr_cnt);
+
+  if(checkTrackingStatus == -1) {
+	  perror("Error in tracking");
+	  ros::shutdown();
+  }
 
   // extract the bounding boxes and send them to ROS
   int i, j;
@@ -393,26 +420,26 @@ void* YoloObjectDetector::detectInThread() {
   running_ = 0;
 
   /* check if image fetch end */
-  if(detectIndex == doneIndex){
+  if(detectIndex_ == doneIndex){
 	  //printf("Detect thread finish\n");
 
 	  detectDone = 1;
   }
 
-  detectTime = get_time_in_ms() - detectStart;
   //printf("detect: %f\n", detectTime);
 
   return 0;
 }
 
 void* YoloObjectDetector::fetchInThread(){
-  int check_status;
+  int check_status, frame_cnt, fetchIndex_;
   double fetchStart, fetchTime;
 
   fetchStart = get_time_in_ms();
-  check_status = read_image_from_disk(buff_, buffIndex_, image_path);
-  fetchTime = get_time_in_ms() - fetchStart;
-  //printf("fetch: %f\n", fetchTime);
+  fetchIndex_ = buffIndex_ % 3;
+  check_status = read_image_from_disk(buff_, fetchIndex_, image_path, &frame_cnt);
+  f_timestamp[fetchIndex_] = get_time_in_ms();
+  //printf("fetchIndex: %d\n", fetchIndex_);
 
   switch(check_status){
 	case -1:
@@ -422,31 +449,36 @@ void* YoloObjectDetector::fetchInThread(){
 	case 0:
 		// Finish 
 		fetchDone = 1;
-		doneIndex = buffIndex_;
+		doneIndex = fetchIndex_;
 		break;
 	case 1:            
+		fr_cnt = frame_cnt;
 		// Success
 		break;
 	default:
 		fprintf(stderr, "FETCH ERROR\n");
 		ros::shutdown();
   }
+  letterbox_image_into(buff_[fetchIndex_], net_->w, net_->h, buffLetter_[fetchIndex_]);
 
-  letterbox_image_into(buff_[buffIndex_], net_->w, net_->h, buffLetter_[buffIndex_]);
-
-//  fetchTime = get_time_in_ms() - fetchStart;
-//  printf("fetch: %f\n", fetchTime);
+  fetchTime = get_time_in_ms() - fetchStart;
+  //printf("fetch: %f\n", fetchTime);
 
   return 0;
 }
 
 void* YoloObjectDetector::displayInThread(void* ptr) {
   double dispStart, dispTime;
-  int dispIndex = (buffIndex_ + 1) % 3;
+#if (defined CONTENTION_FREE)
+  int dispIndex_ = (buffIndex_ + 2) % 3;
+#elif (defined SEQUENTIAL)
+  int dispIndex_ = (buffIndex_) % 3;
+#else
+  int dispIndex_ = (buffIndex_ + 1) % 3;
+#endif
 
   dispStart = get_time_in_ms();
-  show_image_cv(buff_[dispIndex], "YOLO V3", ipl_);
-  int c = cv::waitKey(waitKeyDelay_);
+  int c = show_image_cv(buff_[dispIndex_], "AES", waitKeyDelay_);
   if (c != -1) c = c % 256;
   if (c == 27) {
     demoDone_ = 1;
@@ -464,13 +496,15 @@ void* YoloObjectDetector::displayInThread(void* ptr) {
   }
 
   /* Shutdown darknet ros */
-  if (dispIndex == doneIndex){
+  if (dispIndex_ == doneIndex){
 	  //printf("Display thread finish\n");
 	  ros::shutdown();
   }
 
   dispTime = get_time_in_ms() - dispStart;
+  double e2eDelay = get_time_in_ms() - f_timestamp[dispIndex_];
   //printf("display: %f\n", dispTime);
+  printf("E2E delay (ms): %0.2f\n", e2eDelay);
 
   return 0;
 }
@@ -499,7 +533,7 @@ void YoloObjectDetector::setupNetwork(char* cfgfile, char* weightfile, char* dat
   demoThresh_ = thresh;
   demoHier_ = hier;
   fullScreen_ = fullscreen;
-  printf("YOLO V3\n");
+  printf("AES\n");
   net_ = load_network(cfgfile, weightfile, 0);
   set_batch_network(net_, 1);
 }
@@ -520,6 +554,7 @@ void YoloObjectDetector::yolo() {
   srand(2222222);
 
   int i;
+  int init_cnt;
 
   demoTotal_ = sizeNetwork(net_);
   predictions_ = (float**)calloc(demoFrame_, sizeof(float*));
@@ -531,7 +566,7 @@ void YoloObjectDetector::yolo() {
   layer l = net_->layers[net_->n - 1];
   roiBoxes_ = (darknet_ros::RosBox_*)calloc(l.w * l.h * l.n, sizeof(darknet_ros::RosBox_));
 
-  if(read_image_from_disk(buff_, buffIndex_, image_path) == -1){
+  if(read_image_from_disk(buff_, buffIndex_, image_path, &init_cnt) == -1){
 	  fprintf(stderr, "FETCH ERROR\n");
 	  ros::shutdown();
   }
@@ -548,27 +583,32 @@ void YoloObjectDetector::yolo() {
   int count = 0;
 
   if (!demoPrefix_ && viewImage_) {
-    cv::namedWindow("YOLO V3", cv::WINDOW_NORMAL);
+    cv::namedWindow("AES", cv::WINDOW_NORMAL);
     if (fullScreen_) {
-      cv::setWindowProperty("YOLO V3", cv::WND_PROP_FULLSCREEN, cv::WINDOW_FULLSCREEN);
+      cv::setWindowProperty("AES", cv::WND_PROP_FULLSCREEN, cv::WINDOW_FULLSCREEN);
     } else {
-      cv::moveWindow("YOLO V3", 0, 0);
-      cv::resizeWindow("YOLO V3", 640, 480);
+      cv::moveWindow("AES", 0, 0);
+      cv::resizeWindow("AES", 640, 480);
     }
   }
 
   demoTime_ = what_time_is_it_now();
 
-  //while (!demoDone_) {
   while (ros::ok()) {
     buffIndex_ = (buffIndex_ + 1) % 3;
+#ifndef SEQUENTIAL
     if(fetchDone == -1) fetch_thread = std::thread(&YoloObjectDetector::fetchInThread, this);
+#endif
+#ifdef PARALLEL
     if(detectDone == -1) detect_thread = std::thread(&YoloObjectDetector::detectInThread, this);
+#endif
     if (!demoPrefix_) {
       fps_ = 1. / (what_time_is_it_now() - demoTime_);
       demoTime_ = what_time_is_it_now();
       if (viewImage_) {
+#ifndef SEQUENTIAL
         displayInThread(0);
+#endif
       } else {
         generate_image(buff_[(buffIndex_ + 1) % 3], ipl_);
       }
@@ -578,8 +618,22 @@ void YoloObjectDetector::yolo() {
       sprintf(name, "%s_%08d", demoPrefix_, count);
       save_image(buff_[(buffIndex_ + 1) % 3], name);
     }
+#ifndef SEQUENTIAL
     if(fetchDone == -1) fetch_thread.join();
+#endif
+#ifdef PARALLEL
     if(detectDone == -1)detect_thread.join();
+#endif
+
+#ifdef SEQUENTIAL
+	fetchInThread();
+#endif
+#if (defined CONTENTION_FREE || defined SEQUENTIAL)
+	detectInThread();
+#endif
+#ifdef SEQUENTIAL
+	displayInThread(0);
+#endif
     ++count;
   }
 }
