@@ -11,7 +11,6 @@
   <include file="$(find darknet_ros)/launch/darknet_ros.launch">
     <arg name="network_param_file"    value="$(arg network_param_file)"/>
     <arg name="image" value="$(arg image)" />
-    <param name="image_path"           value="/home/avees/AES/FrontLeft/"/>
   </include>
 
 </launch>
