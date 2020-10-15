@@ -1,6 +1,6 @@
 # YOLO ROS: Real-Time Object Detection for ROS
 
-More details
+### More details
 * https://github.com/leggedrobotics/darknet_ros
 
 ### Environment
