@@ -29,13 +29,9 @@ char* weights;
 char* data;
 char** detectionNames;
 
-char* image_path;
 char* gt_path;
+char* result_path;
 
-int doneIndex = -1;
-int fetchDone = -1;
-int detectDone = -1;
-int dispDone = -1;
 int fr_cnt = 0;
 
 double fetchDelay[MAX_ITERATION];
@@ -100,6 +96,7 @@ void YoloObjectDetector::init() {
   std::string weightsModel;
   std::string imagePath;
   std::string gtPath;
+  std::string resultPath;
 
   // Threshold of object detection.
   float thresh;
@@ -112,15 +109,15 @@ void YoloObjectDetector::init() {
   weights = new char[weightsPath.length() + 1];
   strcpy(weights, weightsPath.c_str());
 
-  // Path to image file.
-  nodeHandle_.param("image_path", imagePath, std::string("/aveesSSD/AES/FrontLeft/"));
-  image_path = new char[imagePath.length() + 1];
-  strcpy(image_path, imagePath.c_str());
-
   // Path to GT file.
-  nodeHandle_.param("gt_path", gtPath, std::string("/aveesSSD/AES/FrontLeft/"));
+  nodeHandle_.param("gt_path", gtPath, std::string("/aveesSSD/AES/FrontLeft"));
   gt_path = new char[gtPath.length() + 1];
   strcpy(gt_path, gtPath.c_str());
+
+  // Path to detection result file.
+  nodeHandle_.param("result_path", resultPath, std::string("/aveesSSD/AES/result/result.txt"));
+  result_path = new char[resultPath.length() + 1];
+  strcpy(result_path, resultPath.c_str());
 
   // Path to config file.
   nodeHandle_.param("yolo_model/config_file/name", configModel, std::string("yolov2-tiny.cfg"));
@@ -332,7 +329,6 @@ void* YoloObjectDetector::detectInThread() {
   int checkTrackingStatus;
   car_cnt cnts;
 
-
   running_ = 1;
   float nms = .4;
 #if (defined CONTENTION_FREE || defined SEQUENTIAL)
@@ -363,7 +359,7 @@ void* YoloObjectDetector::detectInThread() {
   }
   image display = buff_[detectIndex_];
   //draw_detections(display, dets, nboxes, demoThresh_, demoNames_, demoAlphabet_, demoClasses_);
-  checkTrackingStatus = draw_tracking_detections(buff_[detectIndex_], gt_path, dets, nboxes, demoThresh_, demoNames_, demoAlphabet_, demoClasses_, &cnts, "a", fr_cnt);
+  checkTrackingStatus = draw_detections_with_tracking(buff_[detectIndex_], gt_path, dets, nboxes, demoThresh_, demoNames_, demoAlphabet_, demoClasses_, &cnts, result_path, fr_cnt);
 
   if(checkTrackingStatus == -1) {
 	  perror("Error in tracking");
@@ -419,13 +415,6 @@ void* YoloObjectDetector::detectInThread() {
   demoIndex_ = (demoIndex_ + 1) % demoFrame_;
   running_ = 0;
 
-  /* check if image fetch end */
-  if(detectIndex_ == doneIndex){
-	  //printf("Detect thread finish\n");
-
-	  detectDone = 1;
-  }
-
   //printf("detect: %f\n", detectTime);
 
   return 0;
@@ -437,30 +426,17 @@ void* YoloObjectDetector::fetchInThread(){
 
   fetchStart = get_time_in_ms();
   fetchIndex_ = buffIndex_ % 3;
-  check_status = read_image_from_disk(buff_, fetchIndex_, image_path, &frame_cnt);
-  f_timestamp[fetchIndex_] = get_time_in_ms();
-  //printf("fetchIndex: %d\n", fetchIndex_);
-
-  switch(check_status){
-	case -1:
-		fprintf(stderr, "FETCH ERROR\n");
-		ros::shutdown();
-		break;
-	case 0:
-		// Finish 
-		fetchDone = 1;
-		doneIndex = fetchIndex_;
-		break;
-	case 1:            
-		fr_cnt = frame_cnt;
-		// Success
-		break;
-	default:
-		fprintf(stderr, "FETCH ERROR\n");
-		ros::shutdown();
+  f_timestamp[fetchIndex_] = fetchStart;
+  {
+    boost::shared_lock<boost::shared_mutex> lock(mutexImageCallback_);
+    IplImageWithHeader_ imageAndHeader = getIplImageWithHeader();
+    IplImage* ROS_img = imageAndHeader.image;
+    ipl_into_image(ROS_img, buff_[buffIndex_]);
+    headerBuff_[fetchIndex_] = imageAndHeader.header;
+    buffId_[fetchIndex_] = actionId_;
   }
+  rgbgr_image(buff_[fetchIndex_]);
   letterbox_image_into(buff_[fetchIndex_], net_->w, net_->h, buffLetter_[fetchIndex_]);
-
   fetchTime = get_time_in_ms() - fetchStart;
   //printf("fetch: %f\n", fetchTime);
 
@@ -493,12 +469,6 @@ void* YoloObjectDetector::displayInThread(void* ptr) {
   } else if (c == 81) {
     demoHier_ -= .02;
     if (demoHier_ <= .0) demoHier_ = .0;
-  }
-
-  /* Shutdown darknet ros */
-  if (dispIndex_ == doneIndex){
-	  //printf("Display thread finish\n");
-	  ros::shutdown();
   }
 
   dispTime = get_time_in_ms() - dispStart;
@@ -540,13 +510,13 @@ void YoloObjectDetector::setupNetwork(char* cfgfile, char* weightfile, char* dat
 
 void YoloObjectDetector::yolo() {
   const auto wait_duration = std::chrono::milliseconds(2000);
-//  while (!getImageStatus()) {
-//    printf("Waiting for image.\n");
-//    if (!isNodeRunning()) {
-//      return;
-//    }
-//    std::this_thread::sleep_for(wait_duration);
-//  }
+  while (!getImageStatus()) {
+    printf("Waiting for image.\n");
+    if (!isNodeRunning()) {
+      return;
+    }
+    std::this_thread::sleep_for(wait_duration);
+  }
 
   std::thread detect_thread;
   std::thread fetch_thread;
@@ -566,9 +536,12 @@ void YoloObjectDetector::yolo() {
   layer l = net_->layers[net_->n - 1];
   roiBoxes_ = (darknet_ros::RosBox_*)calloc(l.w * l.h * l.n, sizeof(darknet_ros::RosBox_));
 
-  if(read_image_from_disk(buff_, buffIndex_, image_path, &init_cnt) == -1){
-	  fprintf(stderr, "FETCH ERROR\n");
-	  ros::shutdown();
+  {
+    boost::shared_lock<boost::shared_mutex> lock(mutexImageCallback_);
+    IplImageWithHeader_ imageAndHeader = getIplImageWithHeader();
+    IplImage* ROS_img = imageAndHeader.image;
+    buff_[0] = ipl_to_image(ROS_img);
+    headerBuff_[0] = imageAndHeader.header;
   }
 
   buff_[1] = copy_image(buff_[0]);
@@ -597,10 +570,10 @@ void YoloObjectDetector::yolo() {
   while (ros::ok()) {
     buffIndex_ = (buffIndex_ + 1) % 3;
 #ifndef SEQUENTIAL
-    if(fetchDone == -1) fetch_thread = std::thread(&YoloObjectDetector::fetchInThread, this);
+    fetch_thread = std::thread(&YoloObjectDetector::fetchInThread, this);
 #endif
 #ifdef PARALLEL
-    if(detectDone == -1) detect_thread = std::thread(&YoloObjectDetector::detectInThread, this);
+    detect_thread = std::thread(&YoloObjectDetector::detectInThread, this);
 #endif
     if (!demoPrefix_) {
       fps_ = 1. / (what_time_is_it_now() - demoTime_);
@@ -619,10 +592,10 @@ void YoloObjectDetector::yolo() {
       save_image(buff_[(buffIndex_ + 1) % 3], name);
     }
 #ifndef SEQUENTIAL
-    if(fetchDone == -1) fetch_thread.join();
+    fetch_thread.join();
 #endif
 #ifdef PARALLEL
-    if(detectDone == -1)detect_thread.join();
+    detect_thread.join();
 #endif
 
 #ifdef SEQUENTIAL

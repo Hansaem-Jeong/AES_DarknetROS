@@ -56,6 +56,17 @@ extern "C" {
 #include "parser.h"
 #include "region_layer.h"
 #include "utils.h"
+#include "darknet.h"
+
+#include "image.h"
+
+#ifdef WIN32
+#include <time.h>
+#include "gettimeofday.h"
+#else
+#include <sys/time.h>
+#endif
+
 }
 
 extern "C" void ipl_into_image(IplImage* src, image im);
@@ -169,7 +180,7 @@ class YoloObjectDetector {
   image** demoAlphabet_;
   int demoClasses_;
 
-  network* net_;
+  network *net_;
   std_msgs::Header headerBuff_[3];
   image buff_[3];
   image buffLetter_[3];
