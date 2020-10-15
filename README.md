@@ -10,6 +10,10 @@ More details
 * OpenCV 3.3.1
 * ROS melodic
 
-### Param to read image from disk 
-* In darknet_ros.launch, set "image_path" to read image 
-* In darknet_ros.launch, set "gt_path" to read ground truth file
+### Subscribed topic
+* You can set camera topic in config/ros.yaml (default = /usb_cam/image_raw)
+
+### Param
+* In darknet_ros.launch, set "result_path" to save detection results. 
+* In darknet_ros.launch, set "gt_path" to read ground truth file.
+
