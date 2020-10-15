@@ -21,7 +21,9 @@
   <node pkg="darknet_ros" type="darknet_ros" name="darknet_ros" output="screen" launch-prefix="$(arg launch_prefix)">
     <param name="weights_path"          value="$(arg yolo_weights_path)" />
     <param name="config_path"           value="$(arg yolo_config_path)" />
-    <param name="image_path"            value="/aveesSSD/dataset/FrontLeft/"/>
+    <param name="gt_path" value="/aveesSSD/AES/dataset/gt" />
+    <param name="txt_path" value="/aveesSSD/AES/result/result.txt" />
+
     <remap from="camera/rgb/image_raw"  to="$(arg image)" />
   </node>
 
