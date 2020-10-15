@@ -16,4 +16,3 @@
 ### Param
 * In darknet_ros.launch, set "result_path" to save detection results. 
 * In darknet_ros.launch, set "gt_path" to read ground truth file.
-
